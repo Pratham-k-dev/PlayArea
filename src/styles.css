@@ -1,0 +1,42 @@
+body {
+  margin: 0;
+  background: #020617;
+  color: #e5e7eb;
+  font-family: system-ui;
+}
+
+.app {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.card {
+  background: #020617;
+  border: 1px solid #00ffc6;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 0 20px #00ffc655;
+}
+
+button {
+  background: #00ffc6;
+  border: none;
+  padding: 8px 12px;
+  margin: 6px;
+  cursor: pointer;
+}
+
+input {
+  padding: 8px;
+  background: #020617;
+  border: 1px solid #334155;
+  color: white;
+}
+
+canvas {
+  background: #020617;
+  border-radius: 12px;
+  box-shadow: 0 0 20px #00ffc655;
+}
