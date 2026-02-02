@@ -9,7 +9,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 const { nanoid } = require("nanoid");
-
+const dotenv=require('./.env')
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -77,7 +77,7 @@ function startRound(roomId) {
   room.round.word = word;
   room.round.active = true;
   room.round.startedAt = Date.now();
-  room.round.duration = 60 * 1000; // 60 seconds per round
+  room.round.duration = 120 * 1000; // 60 seconds per round
 
   // drawer is room.drawerIndex (current)
   const drawer = room.players[room.drawerIndex];

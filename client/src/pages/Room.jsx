@@ -30,7 +30,14 @@ function Leaderboard({ players }) {
 function Chat({ messages, onSend }) {
   const [text, setText] = useState("");
   const ref = useRef();
-  useEffect(()=>{ ref.current?.scrollTo({ top: ref.current.scrollHeight }) }, [messages]);
+
+  useEffect(() => {
+    // scroll to bottom when messages change
+    if (ref.current) {
+      ref.current.scrollTop = ref.current.scrollHeight;
+    }
+  }, [messages]);
+
   function send() {
     if (!text.trim()) return;
     onSend(text.trim());
@@ -39,21 +46,37 @@ function Chat({ messages, onSend }) {
   function keyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   }
+
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-slate-800 to-slate-900 p-3 rounded-2xl">
+    // min-h-0 is important so this flex child can shrink and allow overflow scrolling
+    <div className="flex flex-col h-full min-h-0 bg-gradient-to-b from-slate-800 to-slate-900 p-3 rounded-2xl">
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-sm font-semibold">Chat</h4>
         <div className="text-xs text-slate-400">Public</div>
       </div>
-      <div ref={ref} className="flex-1 overflow-y-auto space-y-2 mb-2 pr-2">
-        {messages.map(m=>(
+
+      {/* Constrain messages area: let it grow but not exceed available space, enable scrolling */}
+      <div
+        ref={ref}
+        className="flex-1 overflow-y-auto space-y-2 mb-2 pr-2 max-h-[52vh] min-h-0"
+        aria-live="polite"
+      >
+        {messages.map(m => (
           <div key={m.id} className="text-sm">
             <div className="text-xs text-slate-400">{m.from}</div>
             <div className="text-slate-100">{m.text}</div>
           </div>
         ))}
       </div>
-      <textarea value={text} onChange={e=>setText(e.target.value)} onKeyDown={keyDown} rows={2} className="w-full bg-slate-900 rounded-md p-2 text-slate-100 placeholder:text-slate-400" placeholder="Type a guess or message..." />
+
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onKeyDown={keyDown}
+        rows={2}
+        className="w-full bg-slate-900 rounded-md p-2 text-slate-100 placeholder:text-slate-400"
+        placeholder="Type a guess or message..."
+      />
       <div className="mt-2 flex justify-end">
         <button onClick={send} className="px-3 py-1 bg-indigo-600 rounded-md text-white">Send</button>
       </div>
@@ -62,11 +85,15 @@ function Chat({ messages, onSend }) {
 }
 
 /* DrawBoard: sends 'stroke' events; receives 'stroke' events to draw.
-   This is simpler than the previous advanced version but works for real-time sync. */
+   (kept unchanged for brevity — include your existing DrawBoard here)
+*/
 function DrawBoard({ canDraw, onEmitStroke, remoteStrokesResetRef }) {
   const canvasRef = useRef();
   const drawing = useRef(false);
   const ctxRef = useRef(null);
+  const [color, setColor] = useState("#ffffff");
+  const [size, setSize] = useState(4);
+  const [isEraser, setIsEraser] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -79,11 +106,11 @@ function DrawBoard({ canDraw, onEmitStroke, remoteStrokesResetRef }) {
       canvas.height = Math.round(rect.height * ratio);
       canvas.style.width = rect.width + "px";
       canvas.style.height = rect.height + "px";
-      ctx.scale(ratio, ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = size;
     }
     resize();
     const ro = new ResizeObserver(resize);
@@ -92,32 +119,41 @@ function DrawBoard({ canDraw, onEmitStroke, remoteStrokesResetRef }) {
   }, []);
 
   useEffect(() => {
-    // expose method for clearing when remote strokes reset
     if (remoteStrokesResetRef) {
       remoteStrokesResetRef.current = () => {
         const canvas = canvasRef.current;
         const ctx = ctxRef.current;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.globalCompositeOperation = "source-over";
       };
     }
   }, [remoteStrokesResetRef]);
 
-  // draw incoming stroke
   function drawStrokeOnCanvas(stroke) {
     const ctx = ctxRef.current;
-    if (!ctx) return;
+    if (!ctx || !stroke || !stroke.points || stroke.points.length === 0) return;
+
+    const prevComposite = ctx.globalCompositeOperation;
+    if (stroke.type === "erase") {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.lineWidth = stroke.size || 20;
+      ctx.strokeStyle = "rgba(0,0,0,1)";
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.lineWidth = stroke.size || 4;
+      ctx.strokeStyle = stroke.color || "#fff";
+    }
+
     ctx.beginPath();
-    ctx.strokeStyle = stroke.color || "#fff";
-    ctx.lineWidth = stroke.size || 4;
     const p0 = stroke.points[0];
     ctx.moveTo(p0.x, p0.y);
     for (let i = 1; i < stroke.points.length; i++) {
       ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
     }
     ctx.stroke();
+    ctx.globalCompositeOperation = prevComposite;
   }
 
-  // expose method to draw remote strokes via window event
   useEffect(() => {
     function handleRemote(e) {
       if (e?.detail?.stroke) drawStrokeOnCanvas(e.detail.stroke);
@@ -135,42 +171,133 @@ function DrawBoard({ canDraw, onEmitStroke, remoteStrokesResetRef }) {
     if (!canDraw) return;
     drawing.current = true;
     const p = getPos(e);
-    canvasRef.current.currentStroke = { color: "#ffffff", size: 4, points: [p] };
+    const stroke = {
+      type: isEraser ? "erase" : "draw",
+      color: isEraser ? null : color,
+      size: isEraser ? Math.max(8, size * 3) : size,
+      points: [p]
+    };
+    canvasRef.current.currentStroke = stroke;
   }
   function pointerMove(e) {
     if (!drawing.current || !canDraw) return;
     const p = getPos(e);
     const cs = canvasRef.current.currentStroke;
+    if (!cs) return;
     cs.points.push(p);
-    // draw last segment
-    drawStrokeOnCanvas({ color: cs.color, size: cs.size, points: cs.points.slice(-2) });
+    drawStrokeOnCanvas({ ...cs, points: cs.points.slice(-2) });
   }
   function pointerUp() {
     if (!drawing.current || !canDraw) return;
     drawing.current = false;
     const stroke = canvasRef.current.currentStroke;
-    onEmitStroke && onEmitStroke(stroke);
+    if (stroke && stroke.points && stroke.points.length > 0) {
+      onEmitStroke && onEmitStroke(stroke);
+    }
     canvasRef.current.currentStroke = null;
   }
 
   useEffect(() => {
     const el = canvasRef.current;
+    if (!el) return;
+
     el.addEventListener("pointerdown", pointerDown);
     window.addEventListener("pointermove", pointerMove);
     window.addEventListener("pointerup", pointerUp);
+
+    function touchStart(e) {
+      if (e.touches && e.touches.length > 0) {
+        const t = e.touches[0];
+        e.preventDefault();
+        pointerDown({ clientX: t.clientX, clientY: t.clientY });
+      }
+    }
+    function touchMove(e) {
+      if (e.touches && e.touches.length > 0) {
+        const t = e.touches[0];
+        e.preventDefault();
+        pointerMove({ clientX: t.clientX, clientY: t.clientY });
+      }
+    }
+    function touchEnd(e) {
+      e.preventDefault();
+      pointerUp();
+    }
+
+    el.addEventListener("touchstart", touchStart, { passive: false });
+    window.addEventListener("touchmove", touchMove, { passive: false });
+    window.addEventListener("touchend", touchEnd, { passive: false });
+
+    el.style.touchAction = "none";
+
     return () => {
       el.removeEventListener("pointerdown", pointerDown);
       window.removeEventListener("pointermove", pointerMove);
       window.removeEventListener("pointerup", pointerUp);
+
+      el.removeEventListener("touchstart", touchStart);
+      window.removeEventListener("touchmove", touchMove);
+      window.removeEventListener("touchend", touchEnd);
     };
-  }, [canDraw]);
+  }, [canDraw, isEraser, color, size]);
 
   return (
     <div className="bg-gradient-to-br from-[#071226] to-[#061021] rounded-lg p-3 h-full flex flex-col">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-slate-300">Draw Area</div>
-        <div className="text-xs text-slate-400">You {canDraw ? "are drawing" : "are guessing"}</div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-800 rounded-lg p-2">
+            <label className="text-xs text-slate-300">Brush</label>
+            <input
+              aria-label="Brush size"
+              type="range"
+              min="1"
+              max="40"
+              value={size}
+              onChange={(e) => setSize(Number(e.target.value))}
+              className="accent-indigo-400"
+            />
+            <div className="w-7 h-7 flex items-center justify-center rounded" style={{ background: color }} />
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-800 rounded-lg p-2">
+            {["#ffffff", "#ff7ab6", "#7afcff", "#ffd86b", "#8b5cf6", "#34d399"].map((c) => (
+              <button
+                key={c}
+                aria-label={`Select color ${c}`}
+                onClick={() => { setColor(c); setIsEraser(false); }}
+                className={`w-7 h-7 rounded-full border ${color === c && !isEraser ? "ring-2 ring-indigo-400" : "border-slate-700"}`}
+                style={{ background: c }}
+                title={c}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsEraser((s) => !s)}
+            className={`px-3 py-1 rounded-md ${isEraser ? "bg-red-600 text-white" : "bg-slate-800 text-slate-100"}`}
+            title="Toggle eraser"
+          >
+            {isEraser ? "Eraser: ON" : "Eraser"}
+          </button>
+          <button
+            onClick={() => {
+              const canvas = canvasRef.current;
+              const ctx = ctxRef.current;
+              if (!canvas || !ctx) return;
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              ctx.globalCompositeOperation = "source-over";
+              onEmitStroke && onEmitStroke({ type: "clear" });
+            }}
+            className="px-3 py-1 rounded-md bg-red-600 hover:bg-red-500 text-sm text-white"
+            title="Clear canvas for everyone"
+          >
+            Clear
+          </button>
+        </div>
       </div>
+
       <div className="flex-1 rounded-md overflow-hidden border border-slate-800">
         <canvas ref={canvasRef} style={{ width: "100%", height: "60vh", display: "block" }} />
       </div>
@@ -191,15 +318,12 @@ export default function Room() {
   const remoteStrokesResetRef = useRef(null);
 
   useEffect(() => {
-    // connect if not connected
     if (!socket.connected) {
       socket.connect();
     }
-    // attach handlers
+
     socket.on("connect", () => {
       setConnected(true);
-      // Join room through reconnect path by calling joinRoom if we have name
-      // But server expects explicit join - we sent join at lobby; for safety emit joinRoom again in case of reload
       socket.emit("joinRoom", { roomId: id, name }, (res) => {
         if (!res?.ok) {
           setLocalToast({ type: "error", text: "Failed to join room - it might not exist." });
@@ -212,7 +336,10 @@ export default function Room() {
     socket.on("chatMessage", (m) => setMessages((s)=>[...s,m]));
     socket.on("toast", (t) => setLocalToast(t));
     socket.on("stroke", (stroke) => {
-      // dispatch a DOM event that DrawBoard listens to (to keep code simple)
+      if (stroke?.type === "clear") {
+        remoteStrokesResetRef.current && remoteStrokesResetRef.current();
+        return;
+      }
       window.dispatchEvent(new CustomEvent("remoteStroke", { detail: { stroke } }));
     });
     socket.on("wordForDrawer", ({ word }) => {
@@ -223,18 +350,19 @@ export default function Room() {
     });
     socket.on("roundStarted", (payload) => {
       setMessages((s)=>[...s, { id: Date.now(), from: "System", text: `Round started. Drawer: ${payload.drawerId}. Word length: ${payload.wordLength}` }]);
-      // clear canvas for everyone
       remoteStrokesResetRef.current && remoteStrokesResetRef.current();
     });
     socket.on("roundEnded", ({ word, endedBy }) => {
       setMessages((s)=>[...s, { id: Date.now(), from: "System", text: `Round ended. Word: ${word}` }]);
     });
 
-    // request strokes replay in case we joined late
     socket.emit("requestStrokes", null, (res) => {
       if (res?.ok && res.strokes?.length) {
-        // draw strokes sequentially
         for (const stroke of res.strokes) {
+          if (stroke.type === "clear") {
+            remoteStrokesResetRef.current && remoteStrokesResetRef.current();
+            continue;
+          }
           window.dispatchEvent(new CustomEvent("remoteStroke", { detail: { stroke } }));
         }
       }
@@ -256,19 +384,14 @@ export default function Room() {
 
   function sendChat(text) {
     if (!text) return;
-    // also treat text as guess
-    socket.emit("guess", { text }, (res) => {
-      // server will respond
-    });
+    socket.emit("guess", { text }, (res) => {});
   }
 
   function onSendMessage(text) {
-    // send chat message as normal (not guess)
     socket.emit("chatMessage", { text });
   }
 
   function emitStroke(stroke) {
-    // stroke contains points in canvas coordinates
     socket.emit("stroke", stroke);
   }
 
@@ -317,7 +440,8 @@ export default function Room() {
             <DrawBoard canDraw={roomState?.round?.drawerId === you.id} onEmitStroke={emitStroke} remoteStrokesResetRef={remoteStrokesResetRef} />
           </section>
 
-          <aside className="w-80 hidden md:flex flex-col">
+          {/* add min-h-0 so the chat's flex child can overflow instead of stretching page */}
+          <aside className="w-80 hidden md:flex flex-col min-h-0">
             <Chat messages={messages} onSend={(msg)=>{ socket.emit("guess", { text: msg }, ()=>{});}} />
           </aside>
         </main>
