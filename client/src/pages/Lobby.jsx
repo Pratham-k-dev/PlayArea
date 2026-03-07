@@ -36,7 +36,7 @@ export default function Lobby() {
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-2xl bg-slate-900 rounded-2xl p-6 shadow-lg">
-        <h1 className="text-2xl font-semibold mb-2">Play Area — Scribble</h1>
+        <h1 className="text-2xl font-semibold mb-2">Play Area </h1>
         <p className="text-sm text-slate-400 mb-4">Create or join a room to play. Dark mode UI.</p>
 
         <label className="block text-sm text-slate-300">Your name</label>
