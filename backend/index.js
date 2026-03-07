@@ -9,15 +9,17 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 const { nanoid } = require("nanoid");
-const dotenv=require('./.env')
+const dotenv=require('dotenv')
+dotenv.config()
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
+  transports: ["websocket"],
   cors: {
-    origin: [CLIENT_ORIGIN],
+    origin: [process.env.CLIENT_ORIGIN],
     methods: ["GET", "POST"]
   }
 });
