@@ -19,7 +19,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   
   cors: {
-    origin: "*",
+    origin: [process.env.CLIENT_ORIGIN || "https://play-area-lxpq.vercel.app/"],
     methods: ["GET", "POST"]
   }
 });
