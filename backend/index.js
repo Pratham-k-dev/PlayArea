@@ -17,12 +17,14 @@ app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  transports: ["websocket"],
+  
   cors: {
-    origin: [process.env.CLIENT_ORIGIN],
+    origin: [process.env.CLIENT_ORIGIN || "http://localhost:5173"],
     methods: ["GET", "POST"]
   }
 });
+
+console.log("client" + process.env.CLIENT_ORIGIN)
 
 const PORT = process.env.PORT || 4000;
 
